@@ -1,0 +1,284 @@
+<!doctype html>
+<html>
+  <head>
+    <script src="https://pixijs.download/release/pixi.min.js"></script>
+  </head>
+  <body>
+    <script type="module">
+      // Settings
+      const WIDTH = 800, HEIGHT = 600;
+      const PLAYER_W = 10, PLAYER_H = 75;
+      const BALL_SIZE = 9;
+
+      const KEY_W = 87, KEY_UP = 38;
+      const KEY_S = 83, KEY_DOWN = 40;
+      const KEY_ENTER = 13;
+
+      const WHITE = 0xffffff;
+      const SLIGHT_WHITE = 0xc4c4c4;
+
+      // Playing field settings
+      const PONG_STROKE_WIDTH = 40;
+      const PONG_FIELD_WIDTH = WIDTH + 60;
+      const PONG_FIELD_HEIGHT = HEIGHT - PONG_STROKE_WIDTH;
+
+      const MAX_POINTS = 10;
+
+
+      // Game Objects
+      class Ball {
+        constructor(x, y, size, color) {
+          this.givePoint = false;
+          this.color = color;
+          this.size = size;
+          this.moveSpeed = 5;
+          this.dX = 0;
+          this.dY = 0;
+
+          this.startX = x;
+          this.startY = y;
+          this.timerStart = 60.0;
+          this.resetTimer = this.timerStart;
+
+          this.object = new PIXI.Graphics()
+              .circle(0, 0, this.size)
+              .fill(this.color);
+          this.object.x = this.startX;
+          this.object.y = this.startY;
+        }
+
+
+        reset(deltaTime) {
+          this.givePoint = false;
+          this.object.x = this.startX;
+          this.object.y = this.startY;
+          this.moveSpeed = 5;
+          this.dX = 0;
+          this.dY = 0;
+        }
+        
+        collisionHandler() {
+          const ballBounds = this.object.getBounds();
+
+          if (ballBounds.top <= PONG_STROKE_WIDTH || ballBounds.bottom >= HEIGHT - PONG_STROKE_WIDTH) {
+            this.dY = -this.dY;
+          }
+
+          this.givePoint = (ballBounds.left <= 0 || ballBounds.left >= WIDTH)
+        }
+
+        collisionWithPlayer(player, players) {
+          const ballBounds = this.object.getBounds();
+          const playerBounds = player.object.getBounds();
+          
+          const collisionX = ballBounds.right >= playerBounds.left && ballBounds.left <= playerBounds.right;
+          const collisionY = ballBounds.bottom >= playerBounds.top && ballBounds.top <= playerBounds.bottom;
+
+          if (collisionX && collisionY) {
+            this.dX = -this.dX;
+            this.dY += (Math.random() - 0.5) * 2;
+
+            players.forEach(player => { player.hasBall = false; });
+            player.hasBall = true;
+          }
+        }
+
+        update(deltaTime, players) {
+          this.collisionHandler();
+          players.forEach(player => {
+            this.collisionWithPlayer(player, players);
+          });
+          
+          this.object.x += this.dX * this.moveSpeed * deltaTime;
+          this.object.y += this.dY * this.moveSpeed * deltaTime;
+        }
+      }
+
+
+      class Player {
+        constructor(name, x, y, width, height, color, upKey, downKey) {
+          this.name = name;
+          this.points = 0;
+          this.gotPoint = false;
+
+          this.hasBall = false;
+          this.color = color;
+          this.dY = 0;
+
+          this.upKey = upKey;
+          this.downKey = downKey;
+          this.moveSpeed = 10;
+
+          this.object = new PIXI.Graphics()
+              .rect(0, 0, width, height)
+              .fill(this.color);
+          this.object.x = x;
+          this.object.y = y;
+        }
+
+        serve(ball) {
+          this.hasBall = true;
+
+          ball.dX = (this.object.x < WIDTH/2)? 1 : -1;
+          ball.dY = 0;
+        }
+
+        eventHandler(key, keyUp) {
+          // calculate Y axis difference
+          if (keyUp) {
+            if (key.keyCode == this.upKey || key.keyCode == this.downKey)
+              this.dY = 0;
+          }
+          if (!keyUp) {
+            if (key.keyCode == this.upKey) this.dY = -this.moveSpeed;
+            if (key.keyCode == this.downKey) this.dY = this.moveSpeed;
+          }
+        }
+
+        update(deltaTime, ball, end, endText) {
+          // points handling
+          if (this.hasBall && ball.givePoint) {
+            this.points++;
+            ball.reset(deltaTime);
+
+            if (this.points >= MAX_POINTS) {
+              end = true;
+              endText.text = this.name + " wins!";
+              endText.x = WIDTH/2 - endText.width/2;
+              endText.visible = true;
+            }
+            else {
+              this.serve(ball);
+            }
+          }
+
+          // move player
+          let newY = this.object.y + (this.dY * deltaTime);
+          if (newY >= PONG_STROKE_WIDTH && newY + this.object.height <= HEIGHT-PONG_STROKE_WIDTH) {
+            this.object.y = newY;
+          }
+        }
+      }
+
+
+      // Main Game App
+      // setup
+      const app = new PIXI.Application({
+        antialias: true,
+        width: WIDTH,
+        height: HEIGHT
+      });
+      let start = false;
+      let end = false;
+
+      let player1 = new Player('Player 1', 20, HEIGHT/2 - PLAYER_H/2, PLAYER_W, PLAYER_H, SLIGHT_WHITE, KEY_W, KEY_S);
+      let player2 = new Player('Player 2', WIDTH-20-PLAYER_W, HEIGHT/2 - PLAYER_H/2, PLAYER_W, PLAYER_H, SLIGHT_WHITE, KEY_UP, KEY_DOWN);
+      let ball = new Ball(WIDTH/2, HEIGHT/2 - BALL_SIZE/2, BALL_SIZE, SLIGHT_WHITE);
+
+      let pongField = new PIXI.Graphics()
+          .rect(0, 0, PONG_FIELD_WIDTH, PONG_FIELD_HEIGHT)
+          .stroke({ width: PONG_STROKE_WIDTH, color: SLIGHT_WHITE });
+      pongField.x = WIDTH/2 - (PONG_FIELD_WIDTH)/2;
+      pongField.y = HEIGHT/2 - (PONG_FIELD_HEIGHT)/2;
+
+      let pongSepparator = new PIXI.Graphics()
+          .rect(0, 0, 10, HEIGHT)
+          .stroke({ width: 1, color: 0x808080 });
+      pongSepparator.x = WIDTH/2 - 5;
+
+
+      await app.init({ width: WIDTH, height: HEIGHT });
+      document.body.appendChild(app.canvas);
+
+      const startText = new PIXI.BitmapText({
+        text: 'Press ENTER to start',
+        style: {
+          fontSize: 70,
+          fill: 0xdbdbdb,
+          align: 'center',
+        },
+      });
+      startText.x = WIDTH/2 - startText.width/2;
+      startText.y = HEIGHT - 200;
+
+      const endText = new PIXI.BitmapText({
+        visible: false,
+        text: 'win text',
+        style: {
+          fontSize: 70,
+          fill: 0x32a827,
+          align: 'center',
+        },
+      });
+      endText.x = WIDTH/2 - endText.width/2;
+      endText.y = HEIGHT/2 - endText.height/2;
+
+      const pointTrack = new PIXI.BitmapText({
+        text: player1.points + '     ' + player2.points,
+        style: {
+          fontSize: 70,
+          fill: 0xdbdbdb,
+          align: 'center',
+        },
+      });
+      pointTrack.x = WIDTH/2 - pointTrack.width/2;
+      pointTrack.y = 80;
+
+      app.renderer.resize(WIDTH, HEIGHT);
+      app.stage.addChild(pongSepparator);
+      app.stage.addChild(pongField);
+      app.stage.addChild(pointTrack);
+      app.stage.addChild(player1.object);
+      app.stage.addChild(player2.object);
+      app.stage.addChild(ball.object);
+
+      app.stage.addChild(startText);
+      app.stage.addChild(endText);
+      
+      // Key events
+      function onKeyDown(key) {
+        if (!start && key.keyCode == KEY_ENTER) {
+          start = true;
+          startText.visible = false;
+          player1.serve(ball);
+        }
+
+        if (start) {
+          player1.eventHandler(key, false);
+          player2.eventHandler(key, false);
+        }
+      } 
+
+      function onKeyUp(key) {
+        if (start) {
+          player1.eventHandler(key, true)
+          player2.eventHandler(key, true)
+        }
+      } 
+
+      document.addEventListener('keydown', onKeyDown);
+      document.addEventListener('keyup', onKeyUp);
+
+      // Add a ticker callback to update frames
+      let elapsed = 0.0;
+      app.ticker.add((ticker) => {
+        elapsed += ticker.deltaTime;
+        
+        if (start) {
+          pointTrack.text = player1.points + '     ' + player2.points;
+          pointTrack.x = WIDTH/2 - pointTrack.width/2;
+
+          if (!end) {
+            ball.update(ticker.deltaTime, [player1, player2]);
+            if (player1.hasBall) player2.hasBall = false;
+            if (player2.hasBall) player1.hasBall = false;
+
+            player1.update(ticker.deltaTime, ball, end, endText);
+            player2.update(ticker.deltaTime, ball, end, endText);
+
+          }
+        }
+      });
+    </script>
+  </body>
+</html>
